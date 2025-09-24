@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router';
 import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { Icon } from '@iconify/vue';
 import axios from 'axios';
+import socketService from '@/services/socket.js';
 
 const apiUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 const version = import.meta.env.VITE_LOGSEA_VERSION || '0.1.0';
@@ -10,7 +11,6 @@ const version = import.meta.env.VITE_LOGSEA_VERSION || '0.1.0';
 const containers = ref([]);
 const searchQuery = ref('')
 const router = useRouter();
-const containerEventSource = ref(null);
 
 const loaded = ref(false);
 
@@ -51,7 +51,7 @@ const getAppropriateStatus = (container) => {
 
 const fetchContainers = async () => {
   try {
-    const response = await axios.get(`${apiUrl}/containers`);
+    const response = await axios.get(`${apiUrl}/api/containers`);
     containers.value = response.data;
     loaded.value = true;
   } catch (error) {
@@ -60,9 +60,8 @@ const fetchContainers = async () => {
 };
 
 const fetchContainerEvents = async () => {
-  containerEventSource.value = new EventSource(`${apiUrl}/events`);
-  containerEventSource.value.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+  socketService.connect();
+  socketService.subscribeToContainerEvents((data) => {
     console.log(data)
     const index = containers.value.findIndex(c => c.id === data.id);
     if (index !== -1) {
@@ -70,10 +69,7 @@ const fetchContainerEvents = async () => {
     } else {
       containers.value.push(data);
     }
-  };
-  containerEventSource.value.onerror = (error) => {
-    containerEventSource.value.close();
-  };
+  });
 };
 
 const handleItemClick = (container, event) => {
@@ -107,7 +103,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (containerEventSource.value) containerEventSource.value.close();
+  socketService.unsubscribeFromContainerEvents();
 });
 </script>
 
@@ -125,14 +121,16 @@ onUnmounted(() => {
   </div>
 
   <div class="grid-container">
-    <div v-if="!loaded" v-for="i in 12" :key="i" class="grid-item-skeleton">
-      <div class="container-details">
-        <p class="container-id">&nbsp;</p>
-        <p class="container-status">&nbsp;</p>
+    <template v-if="!loaded">
+      <div v-for="i in 12" :key="i" class="grid-item-skeleton">
+        <div class="container-details">
+          <p class="container-id">&nbsp;</p>
+          <p class="container-status">&nbsp;</p>
+        </div>
+        <h3>● ● ● ●</h3>
+        <p class="container-image">&nbsp;</p>
       </div>
-      <h3>● ● ● ●</h3>
-      <p class="container-image">&nbsp;</p>
-    </div>
+    </template>
 
     <div v-for="container in filteredContainers" :key="container.id" class="grid-item fade-in" :class="{ destroyed: container.status === 'destroyed'}"
       @mouseup="event => handleItemClick(container, event)">

@@ -3,14 +3,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, onBeforeUnmount, onUpdated } from 'vue';
+import { ref, onMounted, onBeforeUnmount, onUpdated } from 'vue';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '../../node_modules/@xterm/xterm/css/xterm.css';
 
 function useTerminal(containerRef) {
     const terminal = ref(null);
-    const fitAddon = new FitAddon();
+    const fitAddon = ref(null);
+    const isInitialized = ref(false);
 
     onMounted(() => {
         const terminalProps = {
@@ -23,33 +24,44 @@ function useTerminal(containerRef) {
         };
 
         terminal.value = new Terminal(terminalProps);
+        fitAddon.value = new FitAddon();
 
-        terminal.value.loadAddon(fitAddon);
+        terminal.value.loadAddon(fitAddon.value);
         terminal.value.open(containerRef.value);
-        fitAddon.fit();
+        fitAddon.value.fit();
+        isInitialized.value = true;
 
         window.addEventListener('resize', fitTerminal);
     });
 
     onBeforeUnmount(() => {
-        try {
-            terminal.value.dispose();
-        } catch (error) {
-
-        }
         window.removeEventListener('resize', fitTerminal);
+        try {
+            if (isInitialized.value && terminal.value) {
+                terminal.value.dispose();
+                isInitialized.value = false;
+            }
+        } catch (error) {
+            console.warn('Terminal disposal warning:', error.message);
+        }
     });
 
     onUpdated(() => {
-        fitAddon.fit();
+        if (isInitialized.value && fitAddon.value) {
+            fitAddon.value.fit();
+        }
     });
 
     const writeData = (data) => {
-        terminal.value.write(data);
+        if (isInitialized.value && terminal.value) {
+            terminal.value.write(data);
+        }
     };
 
     const clear = () => {
-        terminal.value.clear();
+        if (isInitialized.value && terminal.value) {
+            terminal.value.clear();
+        }
     };
 
     const zoomIn = () => adjustFontSize(3);
@@ -57,13 +69,17 @@ function useTerminal(containerRef) {
     const zoomOut = () => adjustFontSize(-3);
 
     const adjustFontSize = (change) => {
-        const newFontSize = terminal.value.options.fontSize + change;
-        terminal.value.options.fontSize = Math.min(Math.max(newFontSize, 12), 36);
-        fitTerminal();
+        if (isInitialized.value && terminal.value) {
+            const newFontSize = terminal.value.options.fontSize + change;
+            terminal.value.options.fontSize = Math.min(Math.max(newFontSize, 12), 36);
+            fitTerminal();
+        }
     };
 
     const fitTerminal = () => {
-        fitAddon.fit();
+        if (isInitialized.value && fitAddon.value) {
+            fitAddon.value.fit();
+        }
     };
 
     return { writeData, zoomIn, zoomOut, clear };

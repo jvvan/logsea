@@ -1,28 +1,28 @@
 <script setup>
-import TerminalComponent from '@/components/Terminal.vue';
+import TerminalComponent from '@/components/TerminalComponent.vue';
 import { useRoute } from 'vue-router'
 import { ref, onMounted, onUnmounted } from 'vue'
-
-const apiUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+import socketService from '@/services/socket.js';
 
 const route = useRoute();
 const containerId = ref(route.params.id);
 const terminalRef = ref(null);
-const logSource = ref(null);
 
 async function fetchAndDisplayLogs() {
-  logSource.value = new EventSource(`${apiUrl}/containers/${containerId.value}/logs`);
-
+  socketService.connect();
   terminalRef.value.clear();
 
-  logSource.value.onmessage = (event) => {
-    terminalRef.value.writeData(decodeURIComponent(event.data));
-  };
+  socketService.subscribeToLogs(containerId.value, (logData) => {
+    if (logData.containerId === containerId.value) {
+      terminalRef.value.writeData(logData.data);
+    }
+  });
 
-  logSource.value.onerror = (error) => {
-    console.error('Failed to fetch logs.');
-    logSource.value.close();
-  };
+  socketService.onLogsEnded((data) => {
+    if (data.containerId === containerId.value) {
+      console.log('Logs ended for container:', containerId.value);
+    }
+  });
 }
 
 function handleZoom(event) {
@@ -45,7 +45,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (logSource.value) logSource.value.close();
+  socketService.unsubscribeFromLogs();
+  socketService.offLogsEnded();
 });
 </script>
 
