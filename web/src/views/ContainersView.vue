@@ -51,7 +51,7 @@ const getAppropriateStatus = (container) => {
 
 const fetchContainers = async () => {
   try {
-    const response = await axios.get(`${apiUrl}/api/containers`);
+    const response = await axios.get(`${apiUrl}/containers`);
     containers.value = response.data;
     loaded.value = true;
   } catch (error) {
