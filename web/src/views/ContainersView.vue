@@ -5,7 +5,7 @@ import { Icon } from '@iconify/vue';
 import axios from 'axios';
 import socketService from '@/services/socket.js';
 
-const apiUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+const serverUrl = import.meta.env.VITE_API_BASE_URL || '';
 const version = import.meta.env.VITE_LOGSEA_VERSION || '0.1.0';
 
 const containers = ref([]);
@@ -51,7 +51,7 @@ const getAppropriateStatus = (container) => {
 
 const fetchContainers = async () => {
   try {
-    const response = await axios.get(`${apiUrl}/containers`);
+    const response = await axios.get(`${serverUrl}/api/containers`);
     containers.value = response.data;
     loaded.value = true;
   } catch (error) {
@@ -89,11 +89,32 @@ const filteredContainers = computed(() => {
     return containers.value;
   }
   const query = searchQuery.value.toLowerCase();
-  console.log(query);
   return containers.value.filter(container =>
     container.name.toLowerCase().includes(query) ||
-    container.image.toLowerCase().includes(query)
+    container.image.toLowerCase().includes(query) ||
+    container.composeProject?.toLowerCase().includes(query)
   );
+});
+
+const groupedContainers = computed(() => {
+  const groups = new Map();
+
+  filteredContainers.value.forEach(container => {
+    const projectName = container.composeProject || null;
+    const projectContainers = groups.get(projectName) || [];
+    projectContainers.push(container);
+    groups.set(projectName, projectContainers);
+  });
+
+  return Array.from(groups, ([projectName, projectContainers]) => ({
+    name: projectName || 'Standalone',
+    projectName,
+    containers: projectContainers,
+  })).sort((first, second) => {
+    if (first.projectName === null) return 1;
+    if (second.projectName === null) return -1;
+    return first.name.localeCompare(second.name);
+  });
 });
 
 onMounted(() => {
@@ -120,31 +141,42 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div class="grid-container">
-    <template v-if="!loaded">
-      <div v-for="i in 12" :key="i" class="grid-item-skeleton">
-        <div class="container-details">
-          <p class="container-id">&nbsp;</p>
-          <p class="container-status">&nbsp;</p>
-        </div>
-        <h3>● ● ● ●</h3>
-        <p class="container-image">&nbsp;</p>
-      </div>
-    </template>
-
-    <div v-for="container in filteredContainers" :key="container.id" class="grid-item fade-in" :class="{ destroyed: container.status === 'destroyed'}"
-      @mouseup="event => handleItemClick(container, event)">
-
+  <div v-if="!loaded" class="grid-container">
+    <div v-for="i in 12" :key="i" class="grid-item-skeleton">
       <div class="container-details">
-        <p class="container-id">{{ container.id.slice(0, 8) }}</p>
-        <p class="container-status" :style="{ background: getStatusColor(getAppropriateStatus(container)) }">{{
-          getAppropriateStatus(container) }}</p>
+        <p class="container-id">&nbsp;</p>
+        <p class="container-status">&nbsp;</p>
       </div>
-
-      <h3>{{ container.name }}</h3>
-
-      <p class="container-image">{{ container.image }}</p>
+      <h3>● ● ● ●</h3>
+      <p class="container-image">&nbsp;</p>
     </div>
+  </div>
+
+  <div v-else class="projects-container">
+    <section v-for="project in groupedContainers" :key="project.projectName || 'standalone'" class="project-group fade-in">
+      <header class="project-header">
+        <h2 class="project-name">{{ project.name }}</h2>
+        <span class="project-count">
+          {{ project.containers.length }} container{{ project.containers.length === 1 ? '' : 's' }}
+        </span>
+      </header>
+
+      <div class="grid-container">
+        <div v-for="container in project.containers" :key="container.id" class="grid-item fade-in" :class="{ destroyed: container.status === 'destroyed'}"
+          @mouseup="event => handleItemClick(container, event)">
+
+          <div class="container-details">
+            <p class="container-id">{{ container.id.slice(0, 8) }}</p>
+            <p class="container-status" :style="{ background: getStatusColor(getAppropriateStatus(container)) }">{{
+              getAppropriateStatus(container) }}</p>
+          </div>
+
+          <h3>{{ container.name }}</h3>
+
+          <p class="container-image">{{ container.image }}</p>
+        </div>
+      </div>
+    </section>
   </div>
 
   <a href="https://github.com/dusanlazic/logsea" target="_blank" class="version-number">Logsea v{{ version }}</a>
@@ -181,9 +213,55 @@ onUnmounted(() => {
 
 .grid-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 20px;
   padding: 20px;
+}
+
+.projects-container {
+  display: grid;
+  gap: 20px;
+  padding: 20px;
+}
+
+.project-group {
+  min-width: 0;
+  overflow: hidden;
+  background: #090909;
+  border: 1px solid #1b1b1b;
+  border-radius: 10px;
+}
+
+.project-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1b1b1b;
+  font-family: 'Fira Code', monospace;
+}
+
+.project-name {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #cfcfcf;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-count {
+  flex-shrink: 0;
+  color: #7a7a7a;
+  font-size: 12px;
+}
+
+.project-group .grid-container {
+  padding: 16px;
 }
 
 .grid-item {
@@ -328,5 +406,21 @@ h3 {
 
 .version-number:hover {
   color: #7a7a7a;
+}
+
+@media (max-width: 480px) {
+  .projects-container {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .project-header {
+    padding: 10px 12px;
+  }
+
+  .project-group .grid-container {
+    gap: 12px;
+    padding: 12px;
+  }
 }
 </style>

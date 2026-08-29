@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 const app = express();
 const server = http.createServer(app);
+const composeProjectLabel = "com.docker.compose.project";
 
 const io = new Server(server, {
     cors: {
@@ -58,6 +59,8 @@ io.on("connection", (socket) => {
                     const event = JSON.parse(data.toString().trim());
 
                     let updatedHealth, updatedStatus;
+                    let composeProject =
+                        event.Actor.Attributes[composeProjectLabel] || null;
 
                     if (event.Action === "destroy") {
                         updatedStatus = "destroyed";
@@ -68,6 +71,9 @@ io.on("connection", (socket) => {
 
                         updatedStatus = info.State.Status;
                         updatedHealth = info.State.Health?.Status;
+                        composeProject =
+                            info.Config.Labels?.[composeProjectLabel] ||
+                            composeProject;
                     }
 
                     const output = {
@@ -76,6 +82,7 @@ io.on("connection", (socket) => {
                         image: event.Actor.Attributes.image,
                         status: updatedStatus,
                         health: updatedHealth,
+                        composeProject,
                     };
 
                     socket.emit("container-event", output);
@@ -186,6 +193,8 @@ app.get("/api/containers", async (req, res) => {
                     health: healthStatus,
                     image: containerInfo.Image,
                     tty: details.Config.Tty,
+                    composeProject:
+                        details.Config.Labels?.[composeProjectLabel] || null,
                 };
             })
         );
